@@ -11,6 +11,8 @@ const char* password = "";
 const char* mqtt_server = "broker.hivemq.com";
 const int mqtt_port = 1883;
 
+
+
 WiFiClient espClient;
 PubSubClient client(espClient);
 
@@ -25,10 +27,11 @@ const int PIN_BUZZER = 12;
 const int PIN_LED_GREEN = 25;
 const int PIN_LED_YELLOW = 26;
 const int PIN_LED_RED = 27;
+
 const int PIN_BTN_CONFIRM = 33;
 const int PIN_BTN_MENU = 32;
 
-const int PIN_PIR = 14;   // <<< SENSOR PIR adicionado
+const int PIN_PIR = 14;
 
 // ===== Variáveis de estado =====
 bool medicacaoPendente = false;
@@ -42,7 +45,6 @@ const char* topic_status = "medicamentos/status";
 const char* topic_alert = "medicamentos/alerta";
 const char* topic_log = "medicamentos/log";
 const char* topic_config = "medicamentos/config";
-
 
 // =============================
 // WiFi
@@ -63,15 +65,13 @@ void setup_wifi() {
   }
 }
 
-
 // =============================
 // MQTT
 // =============================
 void callback(char* topic, byte* payload, unsigned int length) {
   String msg;
-  for (unsigned int i = 0; i < length; i++) {
-    msg += (char)payload[i];
-  }
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+
   Serial.print("MQTT -> ");
   Serial.print(topic);
   Serial.print(" : ");
@@ -81,6 +81,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   while (!client.connected()) {
     String clientId = "MedDispenser-" + String(random(0xffff), HEX);
+
     if (client.connect(clientId.c_str())) {
       Serial.println("MQTT Conectado");
       client.subscribe(topic_config);
@@ -91,19 +92,17 @@ void reconnect() {
 }
 
 void publishJson(const char* topic, const String &json) {
-  if (client.connected()) {
-    client.publish(topic, json.c_str());
-  }
+  if (client.connected()) client.publish(topic, json.c_str());
 }
-
 
 // =============================
 // Funções principais
 // =============================
-
 void alertaMedicamento(const char* nome = "Remedio") {
   medicacaoPendente = true;
   tempoInicio = millis();
+
+  Serial.println(">>> ALERTA: medicacao pendente!");
 
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -118,17 +117,16 @@ void alertaMedicamento(const char* nome = "Remedio") {
   delay(600);
   digitalWrite(PIN_BUZZER, LOW);
 
-  servo.write(90); // abre a portinha
+  servo.write(90); // abre compartimento
 
-  String payload =
-    String("{\"device_id\":\"MedDispenser\",\"status\":\"pendente\",\"medicamento\":\"") +
-    nome + "\"}";
-
+  String payload = String("{\"device_id\":\"MedDispenser\",\"status\":\"pendente\",\"medicamento\":\"") + nome + "\"}";
   publishJson(topic_status, payload);
 }
 
 void confirmaMedicacao() {
   medicacaoPendente = false;
+
+  Serial.println(">>> CONFIRMADO: dose tomada");
 
   digitalWrite(PIN_LED_YELLOW, LOW);
   digitalWrite(PIN_LED_GREEN, HIGH);
@@ -145,6 +143,8 @@ void confirmaMedicacao() {
 void alertaAtraso() {
   medicacaoPendente = false;
 
+  Serial.println(">>> ATRASO: +15 minutos");
+
   digitalWrite(PIN_LED_YELLOW, LOW);
   digitalWrite(PIN_LED_RED, HIGH);
 
@@ -160,7 +160,6 @@ void alertaAtraso() {
   digitalWrite(PIN_LED_RED, LOW);
   digitalWrite(PIN_LED_GREEN, HIGH);
 }
-
 
 // =============================
 // Setup
@@ -180,10 +179,10 @@ void setup() {
   pinMode(PIN_LED_YELLOW, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
 
-  pinMode(PIN_BTN_CONFIRM, INPUT_PULLDOWN);
-  pinMode(PIN_BTN_MENU, INPUT_PULLDOWN);
+  // 🔥 CORREÇÃO IMPORTANTE
+  pinMode(PIN_BTN_CONFIRM, INPUT_PULLUP);
+  pinMode(PIN_BTN_MENU, INPUT_PULLUP);
 
-  // SENSOR PIR
   pinMode(PIN_PIR, INPUT);
 
   digitalWrite(PIN_LED_GREEN, HIGH);
@@ -201,7 +200,6 @@ void setup() {
   delay(1000);
 }
 
-
 // =============================
 // Loop principal
 // =============================
@@ -211,12 +209,25 @@ void loop() {
 
   DateTime now = rtc.now();
 
-  // ===== AJUSTAR HORA =====
-  if (!ajustandoHora && digitalRead(PIN_BTN_MENU) == HIGH) {
-    delay(100);
-    if (digitalRead(PIN_BTN_MENU) == HIGH) {
+  // DEBUG DOS BOTÕES (INPUT_PULLUP)
+  if (digitalRead(PIN_BTN_MENU) == LOW)  
+    Serial.println("DEBUG → Botão MENU pressionado");
+
+  if (digitalRead(PIN_BTN_CONFIRM) == LOW)
+    Serial.println("DEBUG → Botão CONFIRMAR pressionado");
+
+  // DEBUG PIR
+  if (digitalRead(PIN_PIR) == HIGH)
+    Serial.println("DEBUG → PIR detectou movimento");
+
+  // ==== AJUSTE DE HORA ====
+  if (!ajustandoHora && digitalRead(PIN_BTN_MENU) == LOW) {
+    delay(150);
+    if (digitalRead(PIN_BTN_MENU) == LOW) {
       ajustandoHora = true;
       horaTemp = now.hour();
+
+      Serial.println("Modo ajuste de hora");
 
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -228,9 +239,14 @@ void loop() {
   }
 
   while (ajustandoHora) {
-    if (digitalRead(PIN_BTN_MENU) == HIGH) {
+
+    if (digitalRead(PIN_BTN_MENU) == LOW) {
       delay(200);
       horaTemp = (horaTemp + 1) % 24;
+
+      Serial.print("Hora ajustada: ");
+      Serial.println(horaTemp);
+
       lcd.setCursor(0, 1);
       lcd.print("    ");
       lcd.setCursor(0, 1);
@@ -238,9 +254,13 @@ void loop() {
       lcd.print(":00");
     }
 
-    if (digitalRead(PIN_BTN_CONFIRM) == HIGH) {
+    if (digitalRead(PIN_BTN_CONFIRM) == LOW) {
       delay(200);
+
       rtc.adjust(DateTime(now.year(), now.month(), now.day(), horaTemp, 0, 0));
+
+      Serial.println("Hora salva no RTC!");
+
       ajustandoHora = false;
 
       lcd.clear();
@@ -252,7 +272,7 @@ void loop() {
     }
   }
 
-  // ===== DISPARAR ALERTA DE MEDICAMENTO =====
+  // ==== ALERTA DE MEDICAMENTO ====
   if (!medicacaoPendente) {
     if ((now.hour() == 8 || now.hour() == 12 || now.hour() == 18 || now.hour() == 22) &&
         now.minute() == 0 && now.second() < 5) {
@@ -262,22 +282,23 @@ void loop() {
     }
   }
 
-  // ===== CONFIRMAR POR BOTÃO =====
-  if (digitalRead(PIN_BTN_CONFIRM) == HIGH && medicacaoPendente) {
-    delay(50);
-    if (digitalRead(PIN_BTN_CONFIRM) == HIGH) {
+  // ==== CONFIRMAÇÃO POR BOTÃO ====
+  if (digitalRead(PIN_BTN_CONFIRM) == LOW && medicacaoPendente) {
+    delay(100);
+    if (digitalRead(PIN_BTN_CONFIRM) == LOW) {
       confirmaMedicacao();
       delay(300);
     }
   }
 
-  // ===== CONFIRMAÇÃO AUTOMÁTICA VIA PIR =====
+  // ==== CONFIRMAÇÃO VIA PIR ====
   if (medicacaoPendente && digitalRead(PIN_PIR) == HIGH) {
+    Serial.println("CONFIRMADO via PIR");
     confirmaMedicacao();
     delay(1000);
   }
 
-  // ===== ATRASO > 15 MIN =====
+  // ==== ATRASO ====
   if (medicacaoPendente && (millis() - tempoInicio > TEMPO_LIMITE_MS)) {
     alertaAtraso();
   }
