@@ -1,6 +1,6 @@
 # Smart-Dispenser
 Smart Dispenser IoT 🩺💊
-
+link demonstração YOUTUBE: https://youtu.be/3I7gH5TS_Ps
 Um dispensador inteligente de medicamentos com ESP32, LCD I2C, servo motor, RTC DS3231, sensor PIR e comunicação MQTT.
 
 🚀 Sobre o Projeto
